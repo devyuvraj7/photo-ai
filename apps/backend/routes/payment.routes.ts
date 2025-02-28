@@ -24,7 +24,7 @@ router.post(
   async (req: express.Request, res: express.Response) => {
     try {
       const { plan, isAnnual, method } = req.body;
-      const userId = req.userId;
+      const userId = req.userId!;
       const userEmail = (req as any).user?.email;
 
       console.log("Payment request received:", {
@@ -56,7 +56,6 @@ router.post(
           const session = await createStripeSession(
             userId,
             plan as "basic" | "premium",
-            isAnnual,
             userEmail
           );
           console.log("Stripe session created:", session);
@@ -77,11 +76,7 @@ router.post(
 
       if (method === "razorpay") {
         try {
-          const order = await PaymentService.createRazorpayOrder(
-            userId,
-            plan,
-            isAnnual
-          );
+          const order = await PaymentService.createRazorpayOrder(userId, plan);
           console.log("Razorpay order created successfully:", order);
           res.json(order);
           return;
@@ -228,6 +223,8 @@ router.post(
           paymentId: razorpay_payment_id,
           orderId: razorpay_order_id,
           signature: razorpay_signature,
+          plan: plan as PlanType,
+          userId: req.userId!,
         });
 
         if (!isValid) {
@@ -286,7 +283,7 @@ router.get(
     try {
       const subscription = await prismaClient.subscription.findFirst({
         where: {
-          userId: req.params.userId,
+          userId: req.userId!,
         },
         orderBy: {
           createdAt: "desc",
@@ -315,7 +312,7 @@ router.get(
     try {
       const userCredit = await prismaClient.userCredit.findUnique({
         where: {
-          userId: req.params.userId,
+          userId: req.userId,
         },
         select: {
           amount: true,
@@ -454,6 +451,29 @@ router.post("/verify", async (req, res) => {
     res.status(500).json({
       message: "Error verifying payment",
       details: error instanceof Error ? error.message : "Unknown error",
+    });
+    return;
+  }
+});
+
+router.get("/transactions", authMiddleware, async (req, res) => {
+  try {
+    const transactions = await prismaClient.transaction.findMany({
+      where: {
+        userId: req.userId!,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    res.status(200).json({
+      transactions,
+    });
+    return;
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal server error",
     });
     return;
   }
